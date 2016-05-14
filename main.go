@@ -10,27 +10,34 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/clbanning/mxj"
 	"github.com/lib/pq"
 	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
-	AppId       string `yaml:"app_id"`
-	ReviewCount int    `yaml:"review_count"`
-	BotName     string `yaml:"bot_name"`
-	IconEmoji   string `yaml:"icon_emoji"`
-	MessageText string `yaml:"message_text"`
-	WebHookUri  string `yaml:"web_hook_uri"`
-	Location    string `yaml:location`
+	AppId          string   `yaml:"app_id"`
+	IosAppId       string   `yaml:"ios_app_id"`
+	ReviewCount    int      `yaml:"review_count"`
+	BotName        string   `yaml:"bot_name"`
+	IconEmoji      string   `yaml:"icon_emoji"`
+	MessageText    string   `yaml:"message_text"`
+	IosMessageText string   `yaml:"ios_message_text"`
+	WebHookUri     string   `yaml:"web_hook_uri"`
+	Location       string   `yaml:location`
+	IosLocations   []string `yaml:ioslocations`
 }
 
 type Review struct {
 	Id        int
+	Platform  string
 	Author    string
 	AuthorUri string `meddler:"author_uri"`
 	Title     string
@@ -66,9 +73,12 @@ type SlackAttachmentField struct {
 	Short bool   `json:"short"`
 }
 
+type Map map[string]interface{}
+
 const (
 	TABLE_NAME                = "review"
 	BASE_URI                  = "https://play.google.com"
+	IOS_BASE_URI              = "https://itunes.apple.com"
 	REVIEW_CLASS_NAME         = ".single-review"
 	AUTHOR_NAME_CLASS_NAME    = ".review-info span.author-name a"
 	REVIEW_DATE_CLASS_NAME    = ".review-info .review-date"
@@ -76,7 +86,7 @@ const (
 	REVIEW_MESSAGE_CLASS_NAME = ".review-body"
 	REVIEW_LINK_CLASS_NAME    = ".review-link"
 	REVIEW_RATE_CLASS_NAME    = ".review-info-star-rating .current-rating"
-	RATING_EMOJI             = ":star:"
+	RATING_EMOJI              = ":star:"
 	MAX_REVIEW_NUM            = 40
 )
 
@@ -122,8 +132,9 @@ func NewConfig(path string) (config Config, err error) {
 
 	url := os.Getenv("DATABASE_URL")
 	connection, _ := pq.ParseURL(url)
-	connection += " sslmode=require"
-
+	if "" == os.Getenv("DISABLE_DATABASE_SSL") {
+		connection += " sslmode=require"
+	}
 	db, err := sql.Open("postgres", connection)
 	if err != nil {
 		return config, err
@@ -146,6 +157,12 @@ func NewConfig(path string) (config Config, err error) {
 	appId := os.Getenv("JON_SNOW_APP_ID")
 	if appId != "" {
 		config.AppId = appId
+	}
+
+	// override IosAppId if environment variable found
+	iosAppId := os.Getenv("JON_SNOW_IOS_APP_ID")
+	if iosAppId != "" {
+		config.IosAppId = iosAppId
 	}
 
 	// override WebHookUri if environment variable found
@@ -175,6 +192,21 @@ func NewConfig(path string) (config Config, err error) {
 		return config, fmt.Errorf("AppID: %s is not exists", config.AppId)
 	}
 
+	// iOS App is optional
+	if config.IosAppId != "" {
+		// "foo-bar" can be any thing, apple get app info by id
+		uri = fmt.Sprintf("%s/app/foo-bar/id%s", IOS_BASE_URI, config.IosAppId)
+
+		res, err = http.Get(uri)
+		if err != nil {
+			return config, err
+		}
+
+		if res.StatusCode == http.StatusNotFound {
+			return config, fmt.Errorf("IosAppID: %s is not exists", config.IosAppId)
+		}
+	}
+
 	return config, err
 }
 
@@ -183,31 +215,126 @@ func main() {
 
 	config, err := NewConfig(*configFile)
 	if err != nil {
-		log.Println(err)
+		printError(err)
+		return
+	}
+	log.Println(config)
+	err = ProcessGooglePlayReview(config)
+	if err != nil {
+		printError(err)
 		return
 	}
 
-	reviews, err := GetReview(config)
+	err = ProcessIosReview(config)
 	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	reviews, err = SaveReviews(reviews)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	err = PostReview(config, reviews)
-	if err != nil {
-		log.Println(err)
+		printError(err)
 		return
 	}
 
 	log.Println("done")
 }
 
+func ProcessGooglePlayReview(config Config) error {
+
+	reviews, err := GetReview(config)
+	if err != nil {
+		return err
+	}
+	reviews, err = SaveReviews(reviews)
+	if err != nil {
+		return err
+	}
+
+	err = PostReview(config, reviews)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ProcessIosReview(config Config) error {
+
+	reviews, err := GetIosReview(config)
+	if err != nil {
+		return err
+	}
+
+	reviews, err = SaveReviews(reviews)
+	if err != nil {
+		return err
+	}
+
+	err = PostReview(config, reviews)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func GetIosReview(config Config) (Reviews, error) {
+	reviews := Reviews{}
+
+	for _, location := range config.IosLocations {
+		uri := fmt.Sprintf("%s/%s/rss/customerreviews/page=1/id=%s/sortBy=mostRecent/xml", IOS_BASE_URI, location, config.IosAppId)
+		log.Println(uri)
+		response, err := http.Get(uri)
+		if err != nil {
+			printError(err)
+			continue
+		} else {
+			defer response.Body.Close()
+			contents, err := ioutil.ReadAll(response.Body)
+
+			if err != nil {
+				printError(err)
+				continue
+			}
+			data, err := mxj.NewMapXml(contents)
+			if err != nil {
+				printError(err)
+				log.Fatal("cant parse xml")
+			}
+
+			entries, err := data.ValuesForPath("feed.entry")
+			if err != nil {
+				printError(err)
+				log.Fatal("cant get entries")
+			}
+			for i, entry := range entries {
+				if i == 0 {
+					continue
+				}
+				rate, _ := strconv.Atoi(entry.(map[string]interface{})["rating"].(string))
+				commonData := entry.(map[string]interface{})
+				author := commonData["author"].(map[string]interface{})
+
+				updatedAt, _ := time.Parse(time.RFC3339, commonData["updated"].(string))
+				if err != nil {
+					printError(err)
+					log.Fatal("cant get time")
+				}
+
+				message := commonData["content"].([]interface{})[0].(map[string]interface{})["#text"].(string)
+
+				review := Review{
+					Platform:  "ios",
+					Author:    author["name"].(string),
+					AuthorUri: author["uri"].(string),
+					Title:     commonData["title"].(string),
+					Rate:      strings.Repeat(RATING_EMOJI, rate),
+					Message:   message,
+					UpdatedAt: updatedAt,
+				}
+
+				reviews = append(reviews, review)
+			}
+		}
+	}
+	sort.Sort(reviews)
+	return reviews, nil
+}
 func GetReview(config Config) (Reviews, error) {
 	uri := fmt.Sprintf("%s/store/apps/details?id=%s&hl=%s", BASE_URI, config.AppId, config.Location)
 	log.Println(uri)
@@ -253,6 +380,7 @@ func GetReview(config Config) (Reviews, error) {
 
 		review := Review{
 			Author:    authorName,
+			Platform:  "andirod",
 			AuthorUri: authorUri,
 			Title:     reviewTitle,
 			Message:   reviewMessage,
@@ -302,8 +430,8 @@ func SaveReviews(reviews Reviews) (Reviews, error) {
 		}
 
 		if id == 0 {
-			_, err := dbh.Exec("INSERT INTO review (author, author_uri, updated_at) VALUES ($1, $2, $3)",
-				review.Author, review.AuthorUri, review.UpdatedAt)
+			_, err := dbh.Exec("INSERT INTO review (platform, author, author_uri, updated_at) VALUES ($1, $2, $3, $4)",
+				review.Platform, review.Author, review.AuthorUri, review.UpdatedAt)
 			if err != nil {
 				return postReviews, err
 			}
@@ -341,7 +469,7 @@ func PostReview(config Config, reviews Reviews) error {
 		})
 
 		attachments = append(attachments, SlackAttachment{
-			Title:     review.Author,
+			Title:     review.Platform + " - " + review.Author,
 			TitleLink: fmt.Sprintf("%s%s", BASE_URI, review.AuthorUri),
 			Text:      review.Message,
 			Fallback:  review.Message + " " + review.AuthorUri,
@@ -349,10 +477,16 @@ func PostReview(config Config, reviews Reviews) error {
 		})
 	}
 
+	var messageText string
+	if reviews[0].Platform == "ios" {
+		messageText = config.IosMessageText
+	} else {
+		messageText = config.MessageText
+	}
 	slackPayload := SlackPayload{
 		UserName:    config.BotName,
 		IconEmoji:   config.IconEmoji,
-		Text:        config.MessageText,
+		Text:        messageText,
 		Attachments: attachments,
 	}
 	payload, err := json.Marshal(slackPayload)
@@ -360,9 +494,11 @@ func PostReview(config Config, reviews Reviews) error {
 		return err
 	}
 
-	req, _ := http.NewRequest("POST", config.WebHookUri, bytes.NewBuffer([]byte(payload)))
+	req, err := http.NewRequest("POST", config.WebHookUri, bytes.NewBuffer([]byte(payload)))
 	req.Header.Set("Content-Type", "application/json")
-
+	if err != nil {
+		return err
+	}
 	client := http.DefaultClient
 	res, err := client.Do(req)
 	if err != nil {
@@ -383,4 +519,11 @@ func (r Reviews) Swap(i, j int) {
 
 func (r Reviews) Less(i, j int) bool {
 	return r[i].UpdatedAt.Unix() > r[j].UpdatedAt.Unix()
+}
+
+func printError(err error) {
+	var stack [4096]byte
+	runtime.Stack(stack[:], false)
+	log.Printf("%q\n%s\n", err, stack[:])
+
 }
