@@ -1,7 +1,7 @@
 {
   "name": "Jon Snow the watcher",
   "description": "This app monitor google play website on certain id, send new reviews to slack channel",
-  "keywords": ["go", "slack", "google play", "reviews"],
+  "keywords": ["go", "slack", "google play", "apple app store", "reviews"],
   "repository": "https://github.com/saiday/JonSnow",
   "scripts": {
     "postdeploy": "psql -h echo ${DATABASE_URL} < schema.sql && bin/JonSnow"
@@ -9,6 +9,9 @@
   "env": {
     "JON_SNOW_APP_ID": {
       "description": "your app_id on Google Play (example: com.google.android.gm)"
+    },
+    "JON_SNOW_IOS_APP_ID":{
+      "description": "your app_id on App Store (example: 9527)"
     },
     "JON_SNOW_SLACK_HOOK": {
       "description": "your slack incoming webhook URL (example: https://hooks.slack.com/services/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)"
