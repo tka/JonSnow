@@ -1,3 +1,7 @@
+# fork from 
+
+  https://github.com/saiday/JonSnow
+
 # Jon Snow the watcher
 > Jon Snow is elected the 998th Lord Commander of the Night's Watch.
 
@@ -6,9 +10,9 @@
 I made it easy for you, build your own monitoring service by one click, few configs. No codes needed.
 
 Deploy your own app to heroku:  
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/saiday/JonSnow&env[JON_SNOW_LOCATION]=zh-tw) (target on zh-tw store)
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/tka/JonSnow&env[JON_SNOW_LOCATION]=zh-tw) (target on zh-tw store)
 
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/saiday/JonSnow&env[JON_SNOW_LOCATION]=en) (target on en store)
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/tka/JonSnow&env[JON_SNOW_LOCATION]=en) (target on en store)
 
 
 #### One more thing
