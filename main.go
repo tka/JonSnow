@@ -493,7 +493,7 @@ func PostReview(config Config, reviews Reviews) error {
 		attachments = append(attachments, SlackAttachment{
 			Title:     review.Author,
 			TitleLink: titleLink,
-			Text:      review.Message,
+			Text:      "*" + review.Title + "*\n" + review.Message,
 			Fallback:  review.Message + " " + review.AuthorUri,
 			Color:     review.Color,
 			Fields:    fields,
