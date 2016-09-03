@@ -261,22 +261,22 @@ func ProcessGooglePlayReview(config Config) error {
 }
 
 func ProcessIosReview(config Config) error {
+	if config.IosAppId != "" {
+		reviews, err := GetIosReview(config)
+		if err != nil {
+			return err
+		}
 
-	reviews, err := GetIosReview(config)
-	if err != nil {
-		return err
+		reviews, err = SaveReviews(reviews)
+		if err != nil {
+			return err
+		}
+
+		err = PostReview(config, reviews)
+		if err != nil {
+			return err
+		}
 	}
-
-	reviews, err = SaveReviews(reviews)
-	if err != nil {
-		return err
-	}
-
-	err = PostReview(config, reviews)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
