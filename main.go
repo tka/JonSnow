@@ -346,9 +346,9 @@ func GetReview(config Config) (Reviews, error) {
 	var r http.Request
 	r.ParseForm()
 	r.Form.Add("reviewType", "0")
-	r.Form.Add("pageNum", "1")
+	r.Form.Add("pageNum", "0")
 	r.Form.Add("id", config.AppId)
-	r.Form.Add("reviewSortOrder", "2")
+	r.Form.Add("reviewSortOrder", "0")
 	r.Form.Add("xhr", "1")
 	bodystr := strings.TrimSpace(r.Form.Encode())
 	request, err := http.NewRequest("POST", BASE_URI+"/store/getreviews?authuser=0", strings.NewReader(bodystr))
