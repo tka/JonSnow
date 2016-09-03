@@ -389,9 +389,9 @@ func GetReview(config Config) (Reviews, error) {
 		dateNode := s.Find(REVIEW_DATE_CLASS_NAME)
 
 		var timeForm string
-		if config.Location == "zh-tw" {
+		if strings.Contains(dateNode.Text(), "年") {
 			timeForm = "2006年1月2日"
-		} else if config.Location == "en" {
+		} else {
 			timeForm = "January 2, 2006"
 		}
 
