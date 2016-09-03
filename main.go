@@ -350,6 +350,7 @@ func GetReview(config Config) (Reviews, error) {
 	r.Form.Add("id", config.AppId)
 	r.Form.Add("reviewSortOrder", "0")
 	r.Form.Add("xhr", "1")
+	r.Form.Add("hl", config.Location)
 	bodystr := strings.TrimSpace(r.Form.Encode())
 	request, err := http.NewRequest("POST", BASE_URI+"/store/getreviews?authuser=0", strings.NewReader(bodystr))
 	if err != nil {
@@ -389,7 +390,7 @@ func GetReview(config Config) (Reviews, error) {
 		dateNode := s.Find(REVIEW_DATE_CLASS_NAME)
 
 		var timeForm string
-		if strings.Contains(dateNode.Text(), "年") {
+		if config.Location == "zh-tw" {
 			timeForm = "2006年1月2日"
 		} else {
 			timeForm = "January 2, 2006"
