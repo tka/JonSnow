@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/clbanning/mxj"
+	"github.com/lib/pq"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -15,11 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/PuerkitoBio/goquery"
-	"github.com/clbanning/mxj"
-	"github.com/lib/pq"
-	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
@@ -85,7 +84,7 @@ const (
 	BASE_URI                    = "https://play.google.com"
 	IOS_BASE_URI                = "https://itunes.apple.com"
 	REVIEW_CLASS_NAME           = ".single-review"
-	AUTHOR_NAME_CLASS_NAME      = ".review-info span.author-name a"
+	AUTHOR_NAME_CLASS_NAME      = ".review-info span.author-name"
 	REVIEW_DATE_CLASS_NAME      = ".review-info .review-date"
 	REVIEW_TITLE_CLASS_NAME     = ".review-body .review-title"
 	REVIEW_MESSAGE_CLASS_NAME   = ".review-body"
@@ -343,21 +342,49 @@ func GetIosReview(config Config) (Reviews, error) {
 	return reviews, nil
 }
 func GetReview(config Config) (Reviews, error) {
-	uri := fmt.Sprintf("%s/store/apps/details?id=%s&hl=%s", BASE_URI, config.AppId, config.Location)
-	log.Println(uri)
-	doc, err := goquery.NewDocument(uri)
-
+	reviews := Reviews{}
+	var r http.Request
+	r.ParseForm()
+	r.Form.Add("reviewType", "0")
+	r.Form.Add("pageNum", "1")
+	r.Form.Add("id", config.AppId)
+	r.Form.Add("reviewSortOrder", "2")
+	r.Form.Add("xhr", "1")
+	bodystr := strings.TrimSpace(r.Form.Encode())
+	request, err := http.NewRequest("POST", BASE_URI+"/store/getreviews?authuser=0", strings.NewReader(bodystr))
 	if err != nil {
-		return nil, err
+		printError(err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	var resp *http.Response
+	resp, err = http.DefaultClient.Do(request)
+	if err != nil {
+		printError(err)
+	}
+	result, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		printError(err)
+	}
+	data := result[7 : len(result)-1]
+	var html string
+	var wo []interface{}
+	err = json.Unmarshal(data, &wo)
+	html = wo[2].(string)
+	if err != nil {
+		printError(err)
 	}
 
-	reviews := Reviews{}
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		printError(err)
+	}
 
 	doc.Find(REVIEW_CLASS_NAME).Each(func(i int, s *goquery.Selection) {
 		authorNode := s.Find(AUTHOR_NAME_CLASS_NAME)
 
 		authorName := authorNode.Text()
-		authorUri, _ := authorNode.Attr("href")
 
 		dateNode := s.Find(REVIEW_DATE_CLASS_NAME)
 
@@ -395,14 +422,13 @@ func GetReview(config Config) (Reviews, error) {
 		review := Review{
 			Author:    authorName,
 			Platform:  "andirod",
-			AuthorUri: authorUri,
+			AuthorUri: reviewPermalink,
 			Title:     reviewTitle,
 			Message:   reviewMessage,
 			Rate:      rate,
 			UpdatedAt: date,
 			Permalink: reviewPermalink,
 		}
-
 		reviews = append(reviews, review)
 	})
 
