@@ -327,7 +327,7 @@ func GetIosReview(config Config) (Reviews, error) {
 				review := Review{
 					Author:    author["name"].(string),
 					Platform:  "ios",
-					AuthorUri: author["uri"].(string),
+					AuthorUri: author["uri"].(string) + author["name"].(string),
 					Title:     commonData["title"].(string),
 					Rate:      strings.Repeat(RATING_EMOJI, rate),
 					Message:   message,
